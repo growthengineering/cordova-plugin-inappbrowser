@@ -646,19 +646,23 @@ public class InAppBrowser extends CordovaPlugin {
                 // Let's create the main dialog
                 dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar_Fullscreen);
                 dialog.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
-                final View decor = dialog.getWindow().getDecorView();
-                decor.setOnSystemUiVisibilityChangeListener (new View.OnSystemUiVisibilityChangeListener() {
-                    public void onSystemUiVisibilityChange(int visibility) {
-                        new Handler().postDelayed(new Runnable() {
-                            public void run(){
-                                if (inFullScreen)
-                                {
-                                    decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE);
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    final View decor = dialog.getWindow().getDecorView();
+                    decor.setOnSystemUiVisibilityChangeListener (new View.OnSystemUiVisibilityChangeListener() {
+                        public void onSystemUiVisibilityChange(int visibility) {
+                            new Handler().postDelayed(new Runnable() {
+                                public void run(){
+                                    if (inFullScreen)
+                                    {
+                                        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE);
+                                    }
                                 }
-                            }
-                        }, 3000);
-                    }
-                });
+                            }, 3000);
+                        }
+                    });
+                }
+                
                 if (fullScreenFeature)
                 {
                     enableFullScreen(cordova.getActivity(), dialog.getWindow());
