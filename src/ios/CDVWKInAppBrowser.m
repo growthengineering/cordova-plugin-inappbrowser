@@ -26,6 +26,7 @@
 #endif
 
 #import <Cordova/CDVPluginResult.h>
+#import <MobileCoreServices/MobileCoreServices.h>
 
 #define    kInAppBrowserTargetSelf @"_self"
 #define    kInAppBrowserTargetSystem @"_system"
@@ -87,6 +88,211 @@ static CDVWKInAppBrowser* instance = nil;
     }
     
     return NO;
+}
+
+- (BOOL) areDownloadsAllowed
+{
+    // Get the current page URL from the WebView
+    NSURL *currentUrl = self.inAppBrowserViewController.webView.URL;
+    if (!currentUrl) {
+        NSLog(@"Current page URL is null, downloads not allowed");
+        return NO;
+    }
+    
+    NSLog(@"Checking downloads permission for page URL: %@", [currentUrl absoluteString]);
+    
+    NSURLComponents *components = [NSURLComponents componentsWithURL:currentUrl resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *queryItem in components.queryItems) {
+        if ([queryItem.name isEqualToString:@"AllowDownloadsIAB"]) {
+            BOOL allowed = [queryItem.value.lowercaseString isEqualToString:@"true"];
+            NSLog(@"Downloads allowed: %@ (parameter: %@)", allowed ? @"YES" : @"NO", queryItem.value);
+            return allowed;
+        }
+    }
+    NSLog(@"Downloads not allowed - missing AllowDownloadsIAB=true parameter in page URL");
+    return NO;
+}
+
+- (BOOL) isDownloadableFile:(NSURL*)url
+{
+    NSString* urlString = [url absoluteString];
+    NSString* lowerUrl = [urlString lowercaseString];
+    
+    NSLog(@"Checking if URL is downloadable: %@", urlString);
+    
+    // First check if downloads are allowed for the current page
+    if (![self areDownloadsAllowed]) {
+        return NO;
+    }
+    
+    // Common downloadable file extensions
+    NSArray* downloadableExtensions = @[
+        @".pdf", @".doc", @".docx", @".xls", @".xlsx", @".ppt", @".pptx",
+        @".zip", @".rar", @".7z", @".tar", @".gz",
+        @".jpg", @".jpeg", @".png", @".gif", @".bmp", @".svg",
+        @".mp3", @".mp4", @".avi", @".mov", @".wmv", @".flv",
+        @".txt", @".csv", @".xml", @".json",
+        @".apk", @".exe", @".dmg", @".pkg"
+    ];
+    
+    for (NSString* extension in downloadableExtensions) {
+        if ([lowerUrl hasSuffix:extension]) {
+            NSLog(@"URL matches extension: %@", extension);
+            return YES;
+        }
+    }
+    
+    // Also check if it's a direct download link pattern
+    if ([lowerUrl containsString:@"download"] || [lowerUrl containsString:@"attachment"]) {
+        NSLog(@"URL matches download pattern");
+        return YES;
+    }
+    
+    NSLog(@"URL is not downloadable");
+    return NO;
+}
+
+- (void) handleDownload:(NSURL*)url
+{
+    NSLog(@"Starting download for: %@", [url absoluteString]);
+    
+    // Show progress alert and keep reference to dismiss it later
+    __block UIAlertController *progressAlert = nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        progressAlert = [UIAlertController alertControllerWithTitle:@"Download in progress..."
+            message:nil
+            preferredStyle:UIAlertControllerStyleAlert];
+        
+        if (self.inAppBrowserViewController) {
+            [self.inAppBrowserViewController presentViewController:progressAlert animated:YES completion:nil];
+        }
+    });
+    
+    // Create download task
+    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+    
+    NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url
+        completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+            NSLog(@"Download completion handler called");
+            
+            // First dismiss the progress alert
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (progressAlert && self.inAppBrowserViewController) {
+                    [progressAlert dismissViewControllerAnimated:YES completion:^{
+                        NSLog(@"Progress alert dismissed");
+                        
+                        // Now handle the result after progress alert is dismissed
+                        if (error) {
+                            NSLog(@"Download error: %@", error.localizedDescription);
+                            
+                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:@"Download failed"
+                                message:nil
+                                preferredStyle:UIAlertControllerStyleAlert];
+                            
+                            [self.inAppBrowserViewController presentViewController:errorAlert animated:YES completion:nil];
+                            
+                            // Auto dismiss after 2 seconds
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                                [errorAlert dismissViewControllerAnimated:YES completion:nil];
+                            });
+                            return;
+                        }
+                        
+                        // Get suggested filename
+                        NSString *suggestedFilename = response.suggestedFilename;
+                        if (!suggestedFilename) {
+                            suggestedFilename = [url lastPathComponent];
+                        }
+                        if (!suggestedFilename || [suggestedFilename length] == 0) {
+                            suggestedFilename = @"download";
+                        }
+                        
+                        // Save to Documents directory (accessible via Files app due to iOS sandboxing)
+                        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+                        NSString *documentsDirectory = [paths objectAtIndex:0];
+                        
+                        NSString *destinationPath = [documentsDirectory stringByAppendingPathComponent:suggestedFilename];
+                        NSLog(@"Saving file to Documents: %@", destinationPath);
+                        
+                        // Move file to Documents directory
+                        NSFileManager *fileManager = [NSFileManager defaultManager];
+                        NSError *moveError;
+                        
+                        // Remove existing file if it exists
+                        if ([fileManager fileExistsAtPath:destinationPath]) {
+                            [fileManager removeItemAtPath:destinationPath error:nil];
+                        }
+                        
+                        BOOL success = [fileManager moveItemAtURL:location toURL:[NSURL fileURLWithPath:destinationPath] error:&moveError];
+                        
+                        if (success) {
+                            NSLog(@"File downloaded successfully to: %@", destinationPath);
+                            
+                            // Show success alert
+                            UIAlertController *successAlert = [UIAlertController alertControllerWithTitle:@"Download completed successfully"
+                                message:nil
+                                preferredStyle:UIAlertControllerStyleAlert];
+                            
+                            [self.inAppBrowserViewController presentViewController:successAlert animated:YES completion:^{
+                                NSLog(@"Success alert presented");
+                            }];
+                            
+                            // Auto dismiss after 2 seconds
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                                [successAlert dismissViewControllerAnimated:YES completion:nil];
+                            });
+                        } else {
+                            NSLog(@"Failed to move downloaded file: %@", moveError.localizedDescription);
+                            
+                            // Show error alert
+                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:@"Download failed"
+                                message:nil
+                                preferredStyle:UIAlertControllerStyleAlert];
+                            
+                            [self.inAppBrowserViewController presentViewController:errorAlert animated:YES completion:nil];
+                            
+                            // Auto dismiss after 2 seconds
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                                [errorAlert dismissViewControllerAnimated:YES completion:nil];
+                            });
+                        }
+                    }];
+                }
+            });
+        }];
+    
+    [downloadTask resume];
+}
+
+- (void) shareFile:(NSURL*)fileURL filename:(NSString*)filename
+{
+    NSArray *activityItems = @[fileURL];
+    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:activityItems applicationActivities:nil];
+    
+    // For iPad - set up popover
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+        activityViewController.popoverPresentationController.sourceView = self.inAppBrowserViewController.view;
+        activityViewController.popoverPresentationController.sourceRect = CGRectMake(self.inAppBrowserViewController.view.bounds.size.width/2, self.inAppBrowserViewController.view.bounds.size.height/2, 1, 1);
+    }
+    
+    [self.inAppBrowserViewController presentViewController:activityViewController animated:YES completion:nil];
+}
+
+- (void) presentDocumentPicker:(NSURL*)fileURL API_AVAILABLE(ios(11.0))
+{
+    UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithURL:fileURL inMode:UIDocumentPickerModeExportToService];
+    documentPicker.delegate = (id<UIDocumentPickerDelegate>)self;
+    documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
+    
+    [self.inAppBrowserViewController presentViewController:documentPicker animated:YES completion:nil];
+}
+
+// UIDocumentPickerDelegate method
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls API_AVAILABLE(ios(11.0))
+{
+    // File has been exported successfully
+    NSLog(@"File exported to: %@", urls);
 }
 
 - (void)open:(CDVInvokedUrlCommand*)command
@@ -508,6 +714,26 @@ static CDVWKInAppBrowser* instance = nil;
     BOOL useBeforeLoad = NO;
     NSString* httpMethod = navigationAction.request.HTTPMethod;
     NSString* errorMessage = nil;
+    
+    // Debug navigation types
+    NSString* navTypeString = @"Unknown";
+    switch (navigationAction.navigationType) {
+        case WKNavigationTypeLinkActivated: navTypeString = @"LinkActivated"; break;
+        case WKNavigationTypeFormSubmitted: navTypeString = @"FormSubmitted"; break;
+        case WKNavigationTypeBackForward: navTypeString = @"BackForward"; break;
+        case WKNavigationTypeReload: navTypeString = @"Reload"; break;
+        case WKNavigationTypeFormResubmitted: navTypeString = @"FormResubmitted"; break;
+        case WKNavigationTypeOther: navTypeString = @"Other"; break;
+    }
+    NSLog(@"Navigation: %@ (Type: %@)", [url absoluteString], navTypeString);
+    
+    // Check if this is a downloadable file (only for link clicks, not page loads)
+    if (navigationAction.navigationType == WKNavigationTypeLinkActivated && [self isDownloadableFile:url]) {
+        NSLog(@"Detected download link click: %@", [url absoluteString]);
+        [self handleDownload:url];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
     
     if([_beforeload isEqualToString:@"post"]){
         //TODO handle POST requests by preserving POST data then remove this condition
