@@ -630,27 +630,17 @@ public class InAppBrowser extends CordovaPlugin {
         try {
             // Get the current page URL from the WebView
             String currentUrl = inAppWebView.getUrl();
-            LOG.d(LOG_TAG, "=== DOWNLOAD PERMISSION CHECK ===");
-            LOG.d(LOG_TAG, "WebView URL: " + (currentUrl != null ? currentUrl : "NULL"));
-            
+              
             if (currentUrl == null) {
-                LOG.d(LOG_TAG, "Current page URL is null, downloads not allowed");
                 return false;
             }
             
             Uri uri = Uri.parse(currentUrl);
             String allowDownloads = uri.getQueryParameter("AllowDownloadsIAB");
             boolean allowed = "true".equalsIgnoreCase(allowDownloads);
-            
-            LOG.d(LOG_TAG, "Parsed URI: " + uri.toString());
-            LOG.d(LOG_TAG, "Query parameters: " + uri.getQuery());
-            LOG.d(LOG_TAG, "AllowDownloadsIAB parameter: " + (allowDownloads != null ? allowDownloads : "NOT FOUND"));
-            LOG.d(LOG_TAG, "Downloads allowed: " + allowed);
-            LOG.d(LOG_TAG, "=== END PERMISSION CHECK ===");
-            
+                  
             return allowed;
         } catch (Exception e) {
-            LOG.e(LOG_TAG, "Error checking download permission: " + e.getMessage());
             return false;
         }
     }
@@ -661,12 +651,9 @@ public class InAppBrowser extends CordovaPlugin {
      * @param url the URL to check
      * @return boolean
      */
-    private boolean isDownloadableFile(String url) {
-        LOG.d(LOG_TAG, "Checking if URL is downloadable: " + url);
-        
+    private boolean isDownloadableFile(String url) {        
         // First check if downloads are allowed for the current page
         if (!areDownloadsAllowed()) {
-            LOG.d(LOG_TAG, "Downloads not allowed - missing AllowDownloadsIAB=true parameter in page URL");
             return false;
         }
         
@@ -685,23 +672,19 @@ public class InAppBrowser extends CordovaPlugin {
         // Check file extensions
         for (String extension : downloadableExtensions) {
             if (lowerUrl.endsWith(extension)) {
-                LOG.d(LOG_TAG, "URL matches extension: " + extension);
                 return true;
             }
             // Also check if extension appears before query parameters
             if (lowerUrl.contains(extension + "?") || lowerUrl.contains(extension + "#")) {
-                LOG.d(LOG_TAG, "URL matches extension with parameters: " + extension);
                 return true;
             }
         }
         
         // Also check if it's a direct download link pattern
         if (lowerUrl.contains("download") || lowerUrl.contains("attachment")) {
-            LOG.d(LOG_TAG, "URL matches download pattern");
             return true;
         }
         
-        LOG.d(LOG_TAG, "URL is not downloadable");
         return false;
     }
 
@@ -714,13 +697,10 @@ public class InAppBrowser extends CordovaPlugin {
      * @param mimeType the MIME type
      */
     private void handleDownload(String url, String userAgent, String contentDisposition, String mimeType) {
-        LOG.d(LOG_TAG, "Starting download for: " + url);
-        
         try {
             // Check if DownloadManager is available
             DownloadManager manager = (DownloadManager) cordova.getActivity().getSystemService(Context.DOWNLOAD_SERVICE);
             if (manager == null) {
-                LOG.e(LOG_TAG, "DownloadManager not available");
                 showDownloadError("Download service not available");
                 return;
             }
@@ -749,9 +729,7 @@ public class InAppBrowser extends CordovaPlugin {
                     filename = "download_" + System.currentTimeMillis();
                 }
             }
-            
-            LOG.d(LOG_TAG, "Download filename: " + filename);
-            
+                        
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
             
             // Set request properties
@@ -778,24 +756,17 @@ public class InAppBrowser extends CordovaPlugin {
             
             // Save to public Downloads directory (accessible via My Files app)
             try {
-                LOG.d(LOG_TAG, "Saving to public Downloads directory");
                 request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
-                LOG.d(LOG_TAG, "Successfully set destination to public Downloads: " + Environment.DIRECTORY_DOWNLOADS + "/" + filename);
             } catch (SecurityException e) {
                 // If permission denied, fall back to app-specific Documents directory
-                LOG.w(LOG_TAG, "Permission denied for public Downloads, using app-specific Documents directory: " + e.getMessage());
                 request.setDestinationInExternalFilesDir(cordova.getActivity(), Environment.DIRECTORY_DOCUMENTS, filename);
-                LOG.d(LOG_TAG, "Fallback to app-specific Documents directory");
             } catch (Exception e) {
-                LOG.e(LOG_TAG, "Error setting download destination: " + e.getMessage());
                 // Ultimate fallback to app-specific Documents directory
                 request.setDestinationInExternalFilesDir(cordova.getActivity(), Environment.DIRECTORY_DOCUMENTS, filename);
-                LOG.d(LOG_TAG, "Fallback to app-specific Documents directory");
             }
             
             // Enqueue download
             long downloadId = manager.enqueue(request);
-            LOG.d(LOG_TAG, "Download enqueued with ID: " + downloadId);
             
             // Make final copy for use in inner classes
             final String finalFilename = filename;
@@ -815,7 +786,6 @@ public class InAppBrowser extends CordovaPlugin {
             startDownloadPolling(downloadId, finalFilename, manager);
             
         } catch (SecurityException e) {
-            LOG.e(LOG_TAG, "Security exception during download: " + e.getMessage());
             // Show more helpful message
             String message = "Download failed due to permissions. ";
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
@@ -825,7 +795,6 @@ public class InAppBrowser extends CordovaPlugin {
             }
             showDownloadError(message);
         } catch (Exception e) {
-            LOG.e(LOG_TAG, "Download failed: " + e.getMessage());
             showDownloadError("Download failed: " + e.getMessage());
         }
     }
@@ -849,7 +818,6 @@ public class InAppBrowser extends CordovaPlugin {
             progressDialog.setIndeterminate(true);
             progressDialog.show();
         } catch (Exception e) {
-            LOG.e(LOG_TAG, "Error showing progress dialog: " + e.toString());
         }
     }
     
@@ -881,7 +849,6 @@ public class InAppBrowser extends CordovaPlugin {
                     obj.put("filepath", filePath);
                     sendUpdate(obj, true);
                 } catch (Exception e) {
-                    LOG.e(LOG_TAG, "Error showing download success: " + e.toString());
                 }
             }
         });
@@ -914,7 +881,6 @@ public class InAppBrowser extends CordovaPlugin {
                     obj.put("message", message);
                     sendUpdate(obj, true);
                 } catch (Exception e) {
-                    LOG.e(LOG_TAG, "Error showing download error: " + e.toString());
                 }
             }
         });
@@ -923,20 +889,14 @@ public class InAppBrowser extends CordovaPlugin {
     /**
      * Register a broadcast receiver to listen for download completion
      */
-    private void registerDownloadCompleteListener(long downloadId, String filename) {
-        LOG.d(LOG_TAG, "Registering download completion listener for ID: " + downloadId);
-        
+    private void registerDownloadCompleteListener(long downloadId, String filename) {        
         // Create a broadcast receiver for download completion
         android.content.BroadcastReceiver downloadReceiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                LOG.d(LOG_TAG, "Download broadcast received");
                 long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
-                LOG.d(LOG_TAG, "Broadcast download ID: " + id + ", expected: " + downloadId);
                 
-                if (id == downloadId) {
-                    LOG.d(LOG_TAG, "Download completed for our file: " + filename);
-                    
+                if (id == downloadId) {                    
                     // Download completed, get the file info
                     DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
                     if (manager != null) {
@@ -954,14 +914,11 @@ public class InAppBrowser extends CordovaPlugin {
                                 
                                 if (statusIndex >= 0) {
                                     int status = cursor.getInt(statusIndex);
-                                    LOG.d(LOG_TAG, "Download status: " + status);
                                     
                                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                                         String localUri = (uriIndex >= 0) ? cursor.getString(uriIndex) : null;
                                         String title = (titleIndex >= 0) ? cursor.getString(titleIndex) : filename;
-                                        
-                                        LOG.d(LOG_TAG, "Download successful - URI: " + localUri + ", Title: " + title);
-                                        
+                                                                                
                                         if (localUri != null) {
                                             // Show the enhanced dialog with options
                                             showDownloadSuccess(title, localUri);
@@ -980,15 +937,11 @@ public class InAppBrowser extends CordovaPlugin {
                                         }
                                     } else if (status == DownloadManager.STATUS_FAILED) {
                                         int reason = (reasonIndex >= 0) ? cursor.getInt(reasonIndex) : -1;
-                                        LOG.e(LOG_TAG, "Download failed with reason: " + reason);
                                         showDownloadError("Download failed (reason: " + reason + ")");
                                     }
                                 }
-                            } else {
-                                LOG.e(LOG_TAG, "Could not query download status");
                             }
                         } catch (Exception e) {
-                            LOG.e(LOG_TAG, "Error querying download: " + e.getMessage());
                         } finally {
                             if (cursor != null) {
                                 cursor.close();
@@ -999,9 +952,7 @@ public class InAppBrowser extends CordovaPlugin {
                     // Unregister the receiver
                     try {
                         context.unregisterReceiver(this);
-                        LOG.d(LOG_TAG, "Download receiver unregistered");
                     } catch (Exception e) {
-                        LOG.e(LOG_TAG, "Error unregistering receiver: " + e.getMessage());
                     }
                 }
             }
@@ -1011,95 +962,7 @@ public class InAppBrowser extends CordovaPlugin {
         try {
             android.content.IntentFilter filter = new android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
             cordova.getActivity().registerReceiver(downloadReceiver, filter);
-            LOG.d(LOG_TAG, "Download receiver registered successfully");
         } catch (Exception e) {
-            LOG.e(LOG_TAG, "Error registering download receiver: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Open the downloaded file with appropriate app
-     */
-    private void openDownloadedFile(String filePath, String filename) {
-        try {
-            Uri fileUri = Uri.parse(filePath);
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            
-            // Use FileProvider for Android 7+ to avoid FileUriExposedException
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                // For now, just show a toast as FileProvider setup is complex
-                android.widget.Toast.makeText(
-                    cordova.getActivity(), 
-                    "File saved. Check Downloads folder or notification.", 
-                    android.widget.Toast.LENGTH_LONG
-                ).show();
-                return;
-            }
-            
-            // Set MIME type
-            String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                MimeTypeMap.getFileExtensionFromUrl(filePath));
-            if (mimeType != null) {
-                intent.setDataAndType(fileUri, mimeType);
-            } else {
-                intent.setData(fileUri);
-            }
-            
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            cordova.getActivity().startActivity(intent);
-            
-        } catch (Exception e) {
-            LOG.e(LOG_TAG, "Error opening file: " + e.getMessage());
-            android.widget.Toast.makeText(
-                cordova.getActivity(), 
-                "Cannot open file. Check Downloads folder.", 
-                android.widget.Toast.LENGTH_LONG
-            ).show();
-        }
-    }
-    
-    /**
-     * Share the downloaded file using Android's share intent
-     */
-    private void shareDownloadedFile(String filePath, String filename) {
-        try {
-            Uri fileUri = Uri.parse(filePath);
-            Intent shareIntent = new Intent(Intent.ACTION_SEND);
-            
-            // Set MIME type
-            String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                MimeTypeMap.getFileExtensionFromUrl(filePath));
-            if (mimeType != null) {
-                shareIntent.setType(mimeType);
-            } else {
-                shareIntent.setType("*/*");
-            }
-            
-            // For Android 7+, we need FileProvider, but for now show alternative
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                android.widget.Toast.makeText(
-                    cordova.getActivity(), 
-                    "File downloaded. You can share it from Downloads folder.", 
-                    android.widget.Toast.LENGTH_LONG
-                ).show();
-                return;
-            }
-            
-            shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT, filename);
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            
-            Intent chooser = Intent.createChooser(shareIntent, "Share " + filename);
-            chooser.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            cordova.getActivity().startActivity(chooser);
-            
-        } catch (Exception e) {
-            LOG.e(LOG_TAG, "Error sharing file: " + e.getMessage());
-            android.widget.Toast.makeText(
-                cordova.getActivity(), 
-                "Cannot share file directly. Check Downloads folder.", 
-                android.widget.Toast.LENGTH_LONG
-            ).show();
         }
     }
     

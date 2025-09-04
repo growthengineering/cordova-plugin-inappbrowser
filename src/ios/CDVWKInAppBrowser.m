@@ -265,36 +265,6 @@ static CDVWKInAppBrowser* instance = nil;
     [downloadTask resume];
 }
 
-- (void) shareFile:(NSURL*)fileURL filename:(NSString*)filename
-{
-    NSArray *activityItems = @[fileURL];
-    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:activityItems applicationActivities:nil];
-    
-    // For iPad - set up popover
-    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
-        activityViewController.popoverPresentationController.sourceView = self.inAppBrowserViewController.view;
-        activityViewController.popoverPresentationController.sourceRect = CGRectMake(self.inAppBrowserViewController.view.bounds.size.width/2, self.inAppBrowserViewController.view.bounds.size.height/2, 1, 1);
-    }
-    
-    [self.inAppBrowserViewController presentViewController:activityViewController animated:YES completion:nil];
-}
-
-- (void) presentDocumentPicker:(NSURL*)fileURL API_AVAILABLE(ios(11.0))
-{
-    UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithURL:fileURL inMode:UIDocumentPickerModeExportToService];
-    documentPicker.delegate = (id<UIDocumentPickerDelegate>)self;
-    documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
-    
-    [self.inAppBrowserViewController presentViewController:documentPicker animated:YES completion:nil];
-}
-
-// UIDocumentPickerDelegate method
-- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls API_AVAILABLE(ios(11.0))
-{
-    // File has been exported successfully
-    NSLog(@"File exported to: %@", urls);
-}
-
 - (void)open:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult;
