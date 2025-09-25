@@ -161,6 +161,8 @@ public class InAppBrowser extends CordovaPlugin {
     private boolean fullscreen = true;
     private String[] allowedSchemes;
     private InAppBrowserClient currentClient;
+    private String downloadInProgress = "Download in progress...";
+    private String downloadCompleted = "Download completed successfully";
 
     /**
      * Executes the request and returns PluginResult.
@@ -646,6 +648,50 @@ public class InAppBrowser extends CordovaPlugin {
     }
 
     /**
+     * Get custom download progress text from URL parameter or use default
+     *
+     * @return String
+     */
+    private String getDownloadInProgressText() {
+        try {
+            // Get the current page URL from the WebView
+            String currentUrl = inAppWebView.getUrl();
+              
+            if (currentUrl == null) {
+                return downloadInProgress;
+            }
+            
+            Uri uri = Uri.parse(currentUrl);
+            String customText = uri.getQueryParameter("downloadInProgress");
+            return customText != null ? customText : downloadInProgress;
+        } catch (Exception e) {
+            return downloadInProgress;
+        }
+    }
+
+    /**
+     * Get custom download completed text from URL parameter or use default
+     *
+     * @return String
+     */
+    private String getDownloadCompletedText() {
+        try {
+            // Get the current page URL from the WebView
+            String currentUrl = inAppWebView.getUrl();
+              
+            if (currentUrl == null) {
+                return downloadCompleted;
+            }
+            
+            Uri uri = Uri.parse(currentUrl);
+            String customText = uri.getQueryParameter("downloadCompleted");
+            return customText != null ? customText : downloadCompleted;
+        } catch (Exception e) {
+            return downloadCompleted;
+        }
+    }
+
+    /**
      * Check if the URL is a downloadable file
      *
      * @param url the URL to check
@@ -812,8 +858,7 @@ public class InAppBrowser extends CordovaPlugin {
             }
             
             progressDialog = new android.app.ProgressDialog(cordova.getActivity());
-            progressDialog.setTitle("Download in progress...");
-            progressDialog.setMessage("Please wait...");
+            progressDialog.setTitle(getDownloadInProgressText());
             progressDialog.setCancelable(false);
             progressDialog.setIndeterminate(true);
             progressDialog.show();
@@ -838,7 +883,7 @@ public class InAppBrowser extends CordovaPlugin {
                     // Show simple success toast
                     android.widget.Toast.makeText(
                         cordova.getActivity(), 
-                        "Download completed successfully", 
+                        getDownloadCompletedText(), 
                         android.widget.Toast.LENGTH_LONG
                     ).show();
                     
@@ -929,7 +974,7 @@ public class InAppBrowser extends CordovaPlugin {
                                                 public void run() {
                                                     android.widget.Toast.makeText(
                                                         cordova.getActivity(), 
-                                                        "Download completed: " + title, 
+                                                        getDownloadCompletedText() + ": " + title, 
                                                         android.widget.Toast.LENGTH_LONG
                                                     ).show();
                                                 }
