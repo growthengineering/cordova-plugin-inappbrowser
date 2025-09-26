@@ -692,6 +692,49 @@ public class InAppBrowser extends CordovaPlugin {
     }
 
     /**
+     * Get localized error message for download failure reasons
+     * This will use the device's OS language settings
+     *
+     * @param reason DownloadManager failure reason
+     * @return String localized error message
+     */
+    /**
+     * Get no storage message from URL parameter
+     */
+    private String getNoStorageMessage() {
+        try {
+            String url = webView.getUrl();
+            if (url != null && url.contains("noStorageMessage=")) {
+                String[] parts = url.split("noStorageMessage=");
+                if (parts.length > 1) {
+                    String message = parts[1].split("&")[0];
+                    return java.net.URLDecoder.decode(message, "UTF-8");
+                }
+            }
+        } catch (Exception e) {
+        }
+        return "Not enough storage space";
+    }
+
+    /**
+     * Get request failed message from URL parameter
+     */
+    private String getRequestFailedMessage() {
+        try {
+            String url = webView.getUrl();
+            if (url != null && url.contains("requestFailed=")) {
+                String[] parts = url.split("requestFailed=");
+                if (parts.length > 1) {
+                    String message = parts[1].split("&")[0];
+                    return java.net.URLDecoder.decode(message, "UTF-8");
+                }
+            }
+        } catch (Exception e) {
+        }
+        return "Request failed";
+    }
+
+    /**
      * Check if the URL is a downloadable file
      *
      * @param url the URL to check
@@ -811,37 +854,38 @@ public class InAppBrowser extends CordovaPlugin {
                 request.setDestinationInExternalFilesDir(cordova.getActivity(), Environment.DIRECTORY_DOCUMENTS, filename);
             }
             
-            // Enqueue download
-            long downloadId = manager.enqueue(request);
             
             // Make final copy for use in inner classes
             final String finalFilename = filename;
             
-            // Show persistent progress dialog
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    showDownloadProgress();
-                }
-            });
-            
-            // Register download completion listener
-            registerDownloadCompleteListener(downloadId, finalFilename);
+            // Enqueue download
+            long downloadId;
+            try {
+                downloadId = manager.enqueue(request);
+                
+                // Show persistent progress dialog
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        showDownloadProgress();
+                    }
+                });
+                
+                // Register download completion listener
+                registerDownloadCompleteListener(downloadId, finalFilename);
+            } catch (Exception e) {
+                // Handle cases where enqueue fails (e.g., no network)
+                showDownloadError(getRequestFailedMessage());
+                return;
+            }
             
             // Also add a backup polling mechanism in case broadcast doesn't work
             startDownloadPolling(downloadId, finalFilename, manager);
             
         } catch (SecurityException e) {
-            // Show more helpful message
-            String message = "Download failed due to permissions. ";
-            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
-                message += "File saved to app folder instead.";
-            } else {
-                message += "File will be saved to app-specific directory.";
-            }
-            showDownloadError(message);
+            showDownloadError(getRequestFailedMessage());
         } catch (Exception e) {
-            showDownloadError("Download failed: " + e.getMessage());
+            showDownloadError(getRequestFailedMessage());
         }
     }
     
@@ -901,6 +945,7 @@ public class InAppBrowser extends CordovaPlugin {
     
     /**
      * Dismiss progress dialog and show download error message to user
+     * Shows localized error message and auto-dismisses after 5 seconds
      */
     private void showDownloadError(String message) {
         cordova.getActivity().runOnUiThread(new Runnable() {
@@ -913,12 +958,24 @@ public class InAppBrowser extends CordovaPlugin {
                         progressDialog = null;
                     }
                     
-                    // Create a simple toast notification
-                    android.widget.Toast.makeText(
-                        cordova.getActivity(), 
-                        "Download error: " + message, 
-                        android.widget.Toast.LENGTH_LONG
-                    ).show();
+                    // Create an AlertDialog that auto-dismisses after 5 seconds
+                    android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(cordova.getActivity());
+                      builder.setTitle(message)
+                           .setCancelable(true);
+                    
+                    final android.app.AlertDialog errorDialog = builder.create();
+                    errorDialog.show();
+                    
+                    // Auto dismiss after 5 seconds
+                    android.os.Handler handler = new android.os.Handler();
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (errorDialog.isShowing()) {
+                                errorDialog.dismiss();
+                            }
+                        }
+                    }, 5000); // 5 seconds
                     
                     // Also send event to JavaScript if needed
                     JSONObject obj = new JSONObject();
@@ -982,7 +1039,13 @@ public class InAppBrowser extends CordovaPlugin {
                                         }
                                     } else if (status == DownloadManager.STATUS_FAILED) {
                                         int reason = (reasonIndex >= 0) ? cursor.getInt(reasonIndex) : -1;
-                                        showDownloadError("Download failed (reason: " + reason + ")");
+                                        String errorMessage;
+                                        if (reason == DownloadManager.ERROR_INSUFFICIENT_SPACE) {
+                                            errorMessage = getNoStorageMessage();
+                                        } else {
+                                            errorMessage = getRequestFailedMessage();
+                                        }
+                                        showDownloadError(errorMessage);
                                     }
                                 }
                             }
@@ -1052,7 +1115,7 @@ public class InAppBrowser extends CordovaPlugin {
                             } else if (status == DownloadManager.STATUS_FAILED) {
                                 LOG.e(LOG_TAG, "Polling detected failed download");
                                 cursor.close();
-                                showDownloadError("Download failed");
+                                showDownloadError(getRequestFailedMessage());
                                 return;
                             }
                         }
@@ -1064,6 +1127,13 @@ public class InAppBrowser extends CordovaPlugin {
                         handler.postDelayed(this, 1000); // Poll every second
                     } else {
                         LOG.d(LOG_TAG, "Download polling timeout");
+                        // Show error message when download times out (likely network issue)
+                        cordova.getActivity().runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                showDownloadError(getRequestFailedMessage());
+                            }
+                        });
                     }
                 } catch (Exception e) {
                     LOG.e(LOG_TAG, "Error in download polling: " + e.getMessage());

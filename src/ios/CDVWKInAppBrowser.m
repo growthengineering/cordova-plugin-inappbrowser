@@ -147,6 +147,40 @@ static CDVWKInAppBrowser* instance = nil;
     return @"Download completed successfully";
 }
 
+- (NSString*) getNoStorageMessage
+{
+    // Get the current page URL from the WebView
+    NSURL *currentUrl = self.inAppBrowserViewController.webView.URL;
+    if (!currentUrl) {
+        return @"Not enough storage space";
+    }
+    
+    NSURLComponents *components = [NSURLComponents componentsWithURL:currentUrl resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *queryItem in components.queryItems) {
+        if ([queryItem.name isEqualToString:@"noStorageMessage"]) {
+            return queryItem.value ? queryItem.value : @"Not enough storage space";
+        }
+    }
+    return @"Not enough storage space";
+}
+
+- (NSString*) getRequestFailedMessage
+{
+    // Get the current page URL from the WebView
+    NSURL *currentUrl = self.inAppBrowserViewController.webView.URL;
+    if (!currentUrl) {
+        return @"Request failed";
+    }
+    
+    NSURLComponents *components = [NSURLComponents componentsWithURL:currentUrl resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *queryItem in components.queryItems) {
+        if ([queryItem.name isEqualToString:@"requestFailed"]) {
+            return queryItem.value ? queryItem.value : @"Request failed";
+        }
+    }
+    return @"Request failed";
+}
+
 - (BOOL) isDownloadableFile:(NSURL*)url
 {
     NSString* urlString = [url absoluteString];
@@ -221,14 +255,22 @@ static CDVWKInAppBrowser* instance = nil;
                         if (error) {
                             NSLog(@"Download error: %@", error.localizedDescription);
                             
-                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:@"Download failed"
+                            // Determine error message based on error type
+                            NSString *errorMessage;
+                            if (error.code == NSURLErrorFileDoesNotExist || error.code == NSURLErrorNoPermissionsToReadFile) {
+                                errorMessage = [self getNoStorageMessage];
+                            } else {
+                                errorMessage = [self getRequestFailedMessage];
+                            }
+                            
+                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:errorMessage
                                 message:nil
                                 preferredStyle:UIAlertControllerStyleAlert];
                             
                             [self.inAppBrowserViewController presentViewController:errorAlert animated:YES completion:nil];
                             
-                            // Auto dismiss after 2 seconds
-                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                            // Auto dismiss after 5 seconds
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                                 [errorAlert dismissViewControllerAnimated:YES completion:nil];
                             });
                             return;
@@ -259,6 +301,7 @@ static CDVWKInAppBrowser* instance = nil;
                             [fileManager removeItemAtPath:destinationPath error:nil];
                         }
                         
+                        
                         BOOL success = [fileManager moveItemAtURL:location toURL:[NSURL fileURLWithPath:destinationPath] error:&moveError];
                         
                         if (success) {
@@ -281,15 +324,23 @@ static CDVWKInAppBrowser* instance = nil;
                         } else {
                             NSLog(@"Failed to move downloaded file: %@", moveError.localizedDescription);
                             
+                            // Determine error message based on error type
+                            NSString *errorMessage;
+                            if (moveError.code == NSFileWriteOutOfSpaceError || moveError.code == NSFileWriteVolumeReadOnlyError) {
+                                errorMessage = [self getNoStorageMessage];
+                            } else {
+                                errorMessage = [self getRequestFailedMessage];
+                            }
+                            
                             // Show error alert
-                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:@"Download failed"
+                            UIAlertController *errorAlert = [UIAlertController alertControllerWithTitle:errorMessage
                                 message:nil
                                 preferredStyle:UIAlertControllerStyleAlert];
                             
                             [self.inAppBrowserViewController presentViewController:errorAlert animated:YES completion:nil];
                             
-                            // Auto dismiss after 2 seconds
-                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                            // Auto dismiss after 5 seconds
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                                 [errorAlert dismissViewControllerAnimated:YES completion:nil];
                             });
                         }
