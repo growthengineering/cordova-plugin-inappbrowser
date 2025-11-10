@@ -746,13 +746,15 @@ public class InAppBrowser extends CordovaPlugin {
         // Force False for now to prevent PDF files from being opened in a new window due Android WebView cannot render PDFs natively
         return false;
 
-        if (url == null) {
-            return false;
-        }
-        String lowerUrl = url.toLowerCase();
-        return lowerUrl.endsWith(".pdf") || 
-               lowerUrl.contains(".pdf?") || 
-               lowerUrl.contains(".pdf#");
+        /*
+            if (url == null) {
+                return false;
+            }
+            String lowerUrl = url.toLowerCase();
+            return lowerUrl.endsWith(".pdf") || 
+                lowerUrl.contains(".pdf?") || 
+                lowerUrl.contains(".pdf#"); 
+        */
     }
 
     /**
