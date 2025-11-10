@@ -743,6 +743,9 @@ public class InAppBrowser extends CordovaPlugin {
      * @return boolean
      */
     private boolean isPdfFile(String url) {
+        // Force False for now to prevent PDF files from being opened in a new window due Android WebView cannot render PDFs natively
+        return false;
+
         if (url == null) {
             return false;
         }
