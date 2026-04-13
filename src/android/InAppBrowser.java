@@ -166,6 +166,8 @@ public class InAppBrowser extends CordovaPlugin {
     private InAppBrowserClient currentClient;
     private String downloadInProgress = "Download in progress...";
     private String downloadCompleted = "Download completed successfully";
+    private String lastDownloadUrl = null;
+    private long lastDownloadUrlTime = 0;
 
     /**
      * Executes the request and returns PluginResult.
@@ -739,6 +741,27 @@ public class InAppBrowser extends CordovaPlugin {
     }
 
     /**
+     * Check if the URL is a PDF file
+     *
+     * @param url the URL to check
+     * @return boolean
+     */
+    private boolean isPdfFile(String url) {
+        // Force False for now to prevent PDF files from being opened in a new window due Android WebView cannot render PDFs natively
+        return false;
+
+        /*
+            if (url == null) {
+                return false;
+            }
+            String lowerUrl = url.toLowerCase();
+            return lowerUrl.endsWith(".pdf") || 
+                lowerUrl.contains(".pdf?") || 
+                lowerUrl.contains(".pdf#"); 
+        */
+    }
+
+    /**
      * Check if the URL is a downloadable file
      *
      * @param url the URL to check
@@ -789,6 +812,76 @@ public class InAppBrowser extends CordovaPlugin {
      * @param contentDisposition the content disposition
      * @param mimeType the MIME type
      */
+    /**
+     * Open a download URL in a new web window instead of downloading
+     * This is for testing purposes to see the download link content
+     *
+     * @param url the URL to open
+     */
+    /**
+     * Open a download URL in a new InAppBrowser window instead of downloading
+     * This is for testing purposes to open the download link in a new window
+     *
+     * @param url the URL to open
+     */
+    private void openDownloadUrlInNewWindow(String url) {
+        try {
+            LOG.d(LOG_TAG, "openDownloadUrlInNewWindow called with URL: " + url);
+            LOG.d(LOG_TAG, "Creating new InAppBrowser instance for download URL");
+            
+            // Store this URL and timestamp to prevent re-triggering DownloadListener
+            lastDownloadUrl = url;
+            lastDownloadUrlTime = System.currentTimeMillis();
+            
+            // Create a completely new InAppBrowser instance for the new window
+            // We'll create it with its own dialog so it doesn't interfere with the current one
+            final InAppBrowser newBrowserInstance = new InAppBrowser();
+            
+            // Copy necessary references from parent CordovaPlugin class
+            newBrowserInstance.cordova = this.cordova;
+            newBrowserInstance.webView = this.webView;
+            
+            // Copy preferences if available (needed by showWebPage)
+            try {
+                java.lang.reflect.Field preferencesField = org.apache.cordova.CordovaPlugin.class.getDeclaredField("preferences");
+                preferencesField.setAccessible(true);
+                Object currentPreferences = preferencesField.get(this);
+                if (currentPreferences != null) {
+                    preferencesField.set(newBrowserInstance, currentPreferences);
+                }
+            } catch (Exception e) {
+                LOG.e(LOG_TAG, "Error copying preferences: " + e.toString());
+            }
+            
+            // Set up features for the new browser (with close button)
+            final HashMap<String, String> features = new HashMap<String, String>();
+            features.put("location", "yes");  // Show location bar
+            features.put("zoom", "yes");     // Show zoom controls
+            features.put("hardwareback", "yes"); // Enable hardware back button
+            features.put("toolbar", "yes"); // Show toolbar with close button
+            
+            // Run on UI thread to ensure proper initialization
+            cordova.getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        LOG.d(LOG_TAG, "Opening new InAppBrowser window with URL: " + url);
+                        newBrowserInstance.showWebPage(url, features);
+                        LOG.d(LOG_TAG, "New InAppBrowser window opened successfully");
+                    } catch (Exception e) {
+                        LOG.e(LOG_TAG, "Error opening new InAppBrowser window: " + e.toString());
+                        e.printStackTrace();
+                    }
+                }
+            });
+            
+        } catch (Exception e) {
+            LOG.e(LOG_TAG, "Error in openDownloadUrlInNewWindow: " + e.toString());
+            e.printStackTrace();
+            showDownloadError("Error opening download link: " + e.getMessage());
+        }
+    }
+
     private void handleDownload(String url, String userAgent, String contentDisposition, String mimeType) {
         try {
             // Check if DownloadManager is available
@@ -1591,19 +1684,43 @@ public class InAppBrowser extends CordovaPlugin {
                 inAppWebView.setDownloadListener(new DownloadListener() {
                     @Override
                     public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
+                        LOG.d(LOG_TAG, "===================================================");
                         LOG.d(LOG_TAG, "DownloadListener triggered for: " + url);
                         LOG.d(LOG_TAG, "UserAgent: " + userAgent);
                         LOG.d(LOG_TAG, "ContentDisposition: " + contentDisposition);
                         LOG.d(LOG_TAG, "MimeType: " + mimeType);
                         LOG.d(LOG_TAG, "ContentLength: " + contentLength);
                         
-                        // Check if downloads are allowed before handling
-                        if (!areDownloadsAllowed()) {
-                            LOG.d(LOG_TAG, "Download blocked by permission check in DownloadListener");
+                        // Check if this is the same URL we just loaded recently (prevent infinite loop)
+                        long currentTime = System.currentTimeMillis();
+                        if (url.equals(lastDownloadUrl) && (currentTime - lastDownloadUrlTime) < 3000) {
+                            LOG.d(LOG_TAG, "URL matches lastDownloadUrl and was loaded recently (" + (currentTime - lastDownloadUrlTime) + "ms ago), ignoring to prevent infinite loop");
+                            LOG.d(LOG_TAG, "===================================================");
                             return;
                         }
                         
-                        handleDownload(url, userAgent, contentDisposition, mimeType);
+                        LOG.d(LOG_TAG, "URL check: lastDownloadUrl=" + lastDownloadUrl + ", timeSinceLastLoad=" + (lastDownloadUrl != null ? (currentTime - lastDownloadUrlTime) : "N/A") + "ms");
+                        
+                        // Check if downloads are allowed before handling
+                        boolean downloadsAllowed = areDownloadsAllowed();
+                        LOG.d(LOG_TAG, "Downloads allowed: " + downloadsAllowed);
+                        
+                        if (!downloadsAllowed) {
+                            LOG.d(LOG_TAG, "Download blocked by permission check in DownloadListener");
+                            LOG.d(LOG_TAG, "===================================================");
+                            return;
+                        }
+                        
+                        // If it's a PDF, open in new window; otherwise download
+                        if (isPdfFile(url)) {
+                            LOG.d(LOG_TAG, "PDF detected - opening in new InAppBrowser window");
+                            openDownloadUrlInNewWindow(url);
+                        } else {
+                            LOG.d(LOG_TAG, "Non-PDF file detected - downloading");
+                            handleDownload(url, userAgent, contentDisposition, mimeType);
+                        }
+                        LOG.d(LOG_TAG, "===================================================");
+
                     }
                 });
                 WebSettings settings = inAppWebView.getSettings();
@@ -1853,17 +1970,26 @@ public class InAppBrowser extends CordovaPlugin {
             // Check if this is a downloadable file
             if (isDownloadableFile(url)) {
                 LOG.d(LOG_TAG, "Detected download link: " + url);
-                // Get the WebView's user agent and handle download
-                String userAgent = inAppWebView.getSettings().getUserAgentString();
-                String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                    MimeTypeMap.getFileExtensionFromUrl(url));
-                if (mimeType == null) {
-                    mimeType = "application/octet-stream";
+                
+                // If it's a PDF, open in new window; otherwise download
+                if (isPdfFile(url)) {
+                    LOG.d(LOG_TAG, "PDF detected - opening in new InAppBrowser window");
+                    openDownloadUrlInNewWindow(url);
+                } else {
+                    LOG.d(LOG_TAG, "Non-PDF file detected - downloading");
+                    String userAgent = inAppWebView.getSettings().getUserAgentString();
+                    String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                        MimeTypeMap.getFileExtensionFromUrl(url));
+                    if (mimeType == null) {
+                        mimeType = "application/octet-stream";
+                    }
+                    LOG.d(LOG_TAG, "Starting download with mimeType: " + mimeType);
+                    handleDownload(url, userAgent, null, mimeType);
                 }
-                LOG.d(LOG_TAG, "Starting download with mimeType: " + mimeType);
-                handleDownload(url, userAgent, null, mimeType);
                 return true; // Override the URL loading
             }
+
+               
 
             if (beforeload.equals("yes") && method == null) {
                 useBeforeload = true;

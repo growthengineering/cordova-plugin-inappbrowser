@@ -165,6 +165,18 @@
     return @"Request failed";
 }
 
+- (BOOL) isPdfFile:(NSURL*)url
+{
+    if (!url) {
+        return NO;
+    }
+    NSString* urlString = [url absoluteString];
+    NSString* lowerUrl = [urlString lowercaseString];
+    return [lowerUrl hasSuffix:@".pdf"] || 
+           [lowerUrl containsString:@".pdf?"] || 
+           [lowerUrl containsString:@".pdf#"];
+}
+
 - (BOOL) isDownloadableFile:(NSURL*)url
 {
     NSString* urlString = [url absoluteString];
@@ -334,6 +346,26 @@
         }];
     
     [downloadTask resume];
+}
+
+- (void)openDownloadUrlInNewWindow:(NSURL*)url
+{
+    NSLog(@"Opening download URL in new InAppBrowser window: %@", [url absoluteString]);
+    
+    // Create a new InAppBrowser instance for the download URL
+    CDVWKInAppBrowser* newBrowser = [[CDVWKInAppBrowser alloc] init];
+    
+    // Initialize the new browser with the same settings as the current one
+    [newBrowser pluginInitialize];
+    
+    // Set up options for the new browser (with close button)
+    NSString* options = @"location=yes,toolbar=yes,zoom=yes,hardwareback=yes";
+    
+    // Create a command to open the new browser
+    CDVInvokedUrlCommand* command = [[CDVInvokedUrlCommand alloc] initWithArguments:@[[url absoluteString], @"_blank", options] callbackId:@"InAppBrowserDownload" className:@"InAppBrowser" methodName:@"open"];
+    
+    // Open the new browser window
+    [newBrowser open:command];
 }
 
 - (void)open:(CDVInvokedUrlCommand*)command
@@ -743,7 +775,15 @@
     // Check if this is a downloadable file (only for link clicks, not page loads)
     if (navigationAction.navigationType == WKNavigationTypeLinkActivated && [self isDownloadableFile:url]) {
         NSLog(@"Detected download link click: %@", [url absoluteString]);
-        [self handleDownload:url];
+        
+        // If it's a PDF, open in new window; otherwise download
+        if ([self isPdfFile:url]) {
+            NSLog(@"PDF detected - opening in new InAppBrowser window");
+            [self openDownloadUrlInNewWindow:url];
+        } else {
+            NSLog(@"Non-PDF file detected - downloading");
+            [self handleDownload:url];
+        }
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
