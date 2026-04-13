@@ -33,8 +33,7 @@ typedef NSDictionary CDVSettingsDictionary;
 
 @class CDVWKInAppBrowserViewController;
 
-@interface CDVWKInAppBrowser : CDVPlugin
-{
+@interface CDVWKInAppBrowser : CDVPlugin <UIDocumentPickerDelegate> {
     UIWindow * tmpWindow;
 
     @private
